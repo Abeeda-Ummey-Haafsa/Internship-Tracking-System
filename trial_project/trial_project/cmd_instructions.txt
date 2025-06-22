@@ -1,0 +1,14 @@
+E:\DBMS Project>python -m venv trial_project 
+
+cd trial_project
+
+Scripts/activate.bat
+
+mkdir trial_project
+
+pip install mysql-connector-python
+
+python -m tkinter ->to check if tkinter is working properly
+
+venv\Scripts\activate -> To reactivate
+or E:\DBMS Project\trial_project>Scripts\activate 
