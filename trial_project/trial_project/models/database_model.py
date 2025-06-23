@@ -1,8 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import hashlib
-#import datetime
-#import os
 from typing import Optional, List, Dict, Any
 import mysql.connector
 from mysql.connector import Error
@@ -35,14 +33,55 @@ class DatabaseModel:
         """Create all necessary tables"""
         try:
             tables = {
-                'users': """
-                    CREATE TABLE IF NOT EXISTS users (
-                        user_id INT AUTO_INCREMENT PRIMARY KEY,
+                'department': """
+                    CREATE TABLE IF NOT EXISTS department (
+                        department_id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL UNIQUE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """,
+                'students': """
+                    CREATE TABLE IF NOT EXISTS students (
+                        student_id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        cgpa DECIMAL(3,2) CHECK (cgpa >= 2.00 AND cgpa <= 4.00),
+                        department_id INT,
+                        email VARCHAR(100) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (department_id) REFERENCES department(department_id)
+                    )
+                """,
+                'faculties': """
+                    CREATE TABLE IF NOT EXISTS faculties (
+                        faculty_id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        department_id INT,
+                        email VARCHAR(100) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (department_id) REFERENCES department(department_id)
+                    )
+                """,
+                'secretaries': """
+                    CREATE TABLE IF NOT EXISTS secretaries (
+                        secretary_id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) NOT NULL,
+                        faculty_id INT,
+                        department_id INT,
+                        email VARCHAR(100) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (faculty_id) REFERENCES faculties(faculty_id),
+                        FOREIGN KEY (department_id) REFERENCES department(department_id)
+                    )
+                """,
+                'admins': """
+                    CREATE TABLE IF NOT EXISTS admins (
+                        admin_id INT AUTO_INCREMENT PRIMARY KEY,
                         name VARCHAR(100) NOT NULL,
                         email VARCHAR(100) UNIQUE NOT NULL,
                         password_hash VARCHAR(255) NOT NULL,
-                        role ENUM('student', 'faculty', 'admin', 'company') NOT NULL,
-                        department VARCHAR(100),
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """,
@@ -51,10 +90,11 @@ class DatabaseModel:
                         company_id INT AUTO_INCREMENT PRIMARY KEY,
                         name VARCHAR(200) NOT NULL,
                         contact_person VARCHAR(100),
-                        email VARCHAR(100),
+                        email VARCHAR(100) UNIQUE NOT NULL,
+                        password_hash VARCHAR(255) NOT NULL,
                         phone VARCHAR(20),
                         address TEXT,
-                        verified BOOLEAN DEFAULT FALSE,
+                        registered BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """,
@@ -81,7 +121,7 @@ class DatabaseModel:
                         application_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         report_path VARCHAR(255),
                         self_found BOOLEAN DEFAULT FALSE,
-                        FOREIGN KEY (student_id) REFERENCES users(user_id),
+                        FOREIGN KEY (student_id) REFERENCES students(student_id),
                         FOREIGN KEY (company_id) REFERENCES companies(company_id),
                         FOREIGN KEY (quota_id) REFERENCES quotas(quota_id)
                     )
@@ -90,13 +130,13 @@ class DatabaseModel:
                     CREATE TABLE IF NOT EXISTS reports (
                         report_id INT AUTO_INCREMENT PRIMARY KEY,
                         student_id INT,
-                        supervisor_id INT,
+                        faculty_id INT,
                         app_id INT,
                         grade VARCHAR(10),
                         comments TEXT,
                         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (student_id) REFERENCES users(user_id),
-                        FOREIGN KEY (supervisor_id) REFERENCES users(user_id),
+                        FOREIGN KEY (student_id) REFERENCES students(student_id),
+                        FOREIGN KEY (faculty_id) REFERENCES faculties(faculty_id),
                         FOREIGN KEY (app_id) REFERENCES applications(app_id)
                     )
                 """,
@@ -110,7 +150,7 @@ class DatabaseModel:
                         remarks TEXT,
                         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (company_id) REFERENCES companies(company_id),
-                        FOREIGN KEY (student_id) REFERENCES users(user_id),
+                        FOREIGN KEY (student_id) REFERENCES students(student_id),
                         FOREIGN KEY (app_id) REFERENCES applications(app_id)
                     )
                 """,
@@ -120,8 +160,8 @@ class DatabaseModel:
                         faculty_id INT,
                         student_id INT,
                         assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (faculty_id) REFERENCES users(user_id),
-                        FOREIGN KEY (student_id) REFERENCES users(user_id)
+                        FOREIGN KEY (faculty_id) REFERENCES faculties(faculty_id),
+                        FOREIGN KEY (student_id) REFERENCES students(student_id)
                     )
                 """
             }
@@ -130,10 +170,48 @@ class DatabaseModel:
                 self.cursor.execute(query)
                 self.connection.commit()
             
+            # Insert default departments if they don't exist
+            self.insert_default_departments()
+            
             print("All tables created successfully")
             
         except Error as e:
             print(f"Error creating tables: {e}")
+    
+    def insert_default_departments(self):
+        """Insert default departments"""
+        try:
+            departments = ['Computer Science', 'Electrical Engineering', 'Mechanical Engineering', 
+                          'Civil Engineering', 'Business Administration']
+            
+            for dept in departments:
+                query = "INSERT IGNORE INTO department (name) VALUES (%s)"
+                self.cursor.execute(query, (dept,))
+            
+            self.connection.commit()
+        except Error as e:
+            print(f"Error inserting departments: {e}")
+    
+    def get_department_id(self, department_name: str) -> Optional[int]:
+        """Get department ID by name"""
+        try:
+            query = "SELECT department_id FROM department WHERE name = %s"
+            self.cursor.execute(query, (department_name,))
+            result = self.cursor.fetchone()
+            return result['department_id'] if result else None
+        except Error as e:
+            print(f"Error getting department ID: {e}")
+            return None
+    
+    def get_all_departments(self) -> List[Dict]:
+        """Get all departments"""
+        try:
+            query = "SELECT * FROM department ORDER BY name"
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting departments: {e}")
+            return []
     
     def hash_password(self, password: str) -> str:
         """Hash password using SHA-256"""
@@ -143,61 +221,195 @@ class DatabaseModel:
         """Verify password against hash"""
         return self.hash_password(password) == hashed
     
-    # User Management
-    def create_user(self, name: str, email: str, password: str, role: str, department: str = None) -> bool:
-        """Create a new user"""
+    # User Management based on roles
+    def create_user_by_role(self, role: str, **kwargs) -> bool:
+        """Create user based on role"""
         try:
-            password_hash = self.hash_password(password)
-            query = """
-                INSERT INTO users (name, email, password_hash, role, department)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            self.cursor.execute(query, (name, email, password_hash, role, department))
-            self.connection.commit()
-            return True
-        except Error as e:
+            password_hash = self.hash_password(kwargs['password'])
+            
+            if role.lower() == 'student':
+                return self.create_student(
+                    name=kwargs['full_name'],
+                    email=kwargs['email'],
+                    password_hash=password_hash,
+                    department=kwargs['department'],
+                    cgpa=float(kwargs['cgpa'])
+                )
+            elif role.lower() == 'faculty':
+                return self.create_faculty(
+                    name=kwargs['full_name'],
+                    email=kwargs['email'],
+                    password_hash=password_hash,
+                    department=kwargs['department']
+                )
+            elif role.lower() == 'secretary':
+                return self.create_secretary(
+                    name=kwargs['full_name'],
+                    email=kwargs['email'],
+                    password_hash=password_hash,
+                    department=kwargs['department'],
+                    faculty_id=kwargs.get('faculty_id')
+                )
+            elif role.lower() == 'company':
+                return self.create_company_user(
+                    name=kwargs['full_name'],
+                    email=kwargs['email'],
+                    password_hash=password_hash
+                )
+            elif role.lower() == 'admin':
+                return self.create_admin(
+                    name=kwargs['full_name'],
+                    email=kwargs['email'],
+                    password_hash=password_hash
+                )
+            return False
+        except Exception as e:
             print(f"Error creating user: {e}")
             return False
     
-    def authenticate_user(self, email: str, password: str) -> Optional[Dict]:
-        """Authenticate user login"""
+    def create_student(self, name: str, email: str, password_hash: str, department: str, cgpa: float) -> bool:
+        """Create a new student"""
         try:
-            query = "SELECT * FROM users WHERE email = %s"
-            self.cursor.execute(query, (email,))
-            user = self.cursor.fetchone()
+            dept_id = self.get_department_id(department)
+            if not dept_id:
+                return False
             
-            if user and self.verify_password(password, user['password_hash']):
-                return user
-            return None
-        except Error as e:
-            print(f"Error authenticating user: {e}")
-            return None
-    
-    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
-        """Get user by ID"""
-        try:
-            query = "SELECT * FROM users WHERE user_id = %s"
-            self.cursor.execute(query, (user_id,))
-            return self.cursor.fetchone()
-        except Error as e:
-            print(f"Error getting user: {e}")
-            return None
-    
-    # Company Management
-    def create_company(self, name: str, contact_person: str, email: str, phone: str, address: str) -> bool:
-        """Create a new company"""
-        try:
             query = """
-                INSERT INTO companies (name, contact_person, email, phone, address)
+                INSERT INTO students (name, email, password_hash, department_id, cgpa)
                 VALUES (%s, %s, %s, %s, %s)
             """
-            self.cursor.execute(query, (name, contact_person, email, phone, address))
+            self.cursor.execute(query, (name, email, password_hash, dept_id, cgpa))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error creating student: {e}")
+            return False
+    
+    def create_faculty(self, name: str, email: str, password_hash: str, department: str) -> bool:
+        """Create a new faculty"""
+        try:
+            dept_id = self.get_department_id(department)
+            if not dept_id:
+                return False
+            
+            query = """
+                INSERT INTO faculties (name, email, password_hash, department_id)
+                VALUES (%s, %s, %s, %s)
+            """
+            self.cursor.execute(query, (name, email, password_hash, dept_id))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error creating faculty: {e}")
+            return False
+    
+    def create_secretary(self, name: str, email: str, password_hash: str, department: str, faculty_id: int = None) -> bool:
+        """Create a new secretary"""
+        try:
+            dept_id = self.get_department_id(department)
+            if not dept_id:
+                return False
+            
+            query = """
+                INSERT INTO secretaries (name, email, password_hash, department_id, faculty_id)
+                VALUES (%s, %s, %s, %s, %s)
+            """
+            self.cursor.execute(query, (name, email, password_hash, dept_id, faculty_id))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error creating secretary: {e}")
+            return False
+    
+    def create_company_user(self, name: str, email: str, password_hash: str) -> bool:
+        """Create a new company user"""
+        try:
+            query = """
+                INSERT INTO companies (name, email, password_hash, contact_person)
+                VALUES (%s, %s, %s, %s)
+            """
+            self.cursor.execute(query, (name, email, password_hash, name))
             self.connection.commit()
             return True
         except Error as e:
             print(f"Error creating company: {e}")
             return False
     
+    def create_admin(self, name: str, email: str, password_hash: str) -> bool:
+        """Create a new admin"""
+        try:
+            query = """
+                INSERT INTO admins (name, email, password_hash)
+                VALUES (%s, %s, %s)
+            """
+            self.cursor.execute(query, (name, email, password_hash))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error creating admin: {e}")
+            return False
+    
+    def authenticate_user(self, email: str, password: str, role: str) -> Optional[Dict]:
+        """Authenticate user login based on role"""
+        try:
+            table_map = {
+                'student': 'students',
+                'faculty': 'faculties', 
+                'secretary': 'secretaries',
+                'company': 'companies',
+                'admin': 'admins'
+            }
+            
+            table = table_map.get(role.lower())
+            if not table:
+                return None
+            
+            # Get ID field name based on table
+            id_field = f"{role.lower()}_id"
+            
+            query = f"SELECT * FROM {table} WHERE email = %s"
+            self.cursor.execute(query, (email,))
+            user = self.cursor.fetchone()
+            
+            if user and self.verify_password(password, user['password_hash']):
+                user['role'] = role.lower()
+                user['user_id'] = user[id_field]  # Standardize user_id field
+                return user
+            return None
+        except Error as e:
+            print(f"Error authenticating user: {e}")
+            return None
+    
+    def get_user_by_id_and_role(self, user_id: int, role: str) -> Optional[Dict]:
+        """Get user by ID and role"""
+        try:
+            table_map = {
+                'student': 'students',
+                'faculty': 'faculties',
+                'secretary': 'secretaries', 
+                'company': 'companies',
+                'admin': 'admins'
+            }
+            
+            table = table_map.get(role.lower())
+            if not table:
+                return None
+            
+            id_field = f"{role.lower()}_id"
+            query = f"SELECT * FROM {table} WHERE {id_field} = %s"
+            self.cursor.execute(query, (user_id,))
+            user = self.cursor.fetchone()
+            
+            if user:
+                user['role'] = role.lower()
+                user['user_id'] = user[id_field]
+            
+            return user
+        except Error as e:
+            print(f"Error getting user: {e}")
+            return None
+    
+    # Company Management
     def get_all_companies(self) -> List[Dict]:
         """Get all companies"""
         try:
@@ -291,10 +503,10 @@ class DatabaseModel:
         """Get all pending applications for admin review"""
         try:
             query = """
-                SELECT a.*, u.name as student_name, u.email as student_email, 
+                SELECT a.*, s.name as student_name, s.email as student_email, 
                        c.name as company_name, q.department
                 FROM applications a
-                JOIN users u ON a.student_id = u.user_id
+                JOIN students s ON a.student_id = s.student_id
                 JOIN companies c ON a.company_id = c.company_id
                 LEFT JOIN quotas q ON a.quota_id = q.quota_id
                 WHERE a.status = 'pending'
@@ -336,7 +548,7 @@ class DatabaseModel:
     def get_faculty_users(self) -> List[Dict]:
         """Get all faculty users"""
         try:
-            query = "SELECT * FROM users WHERE role = 'faculty' ORDER BY name"
+            query = "SELECT * FROM faculties ORDER BY name"
             self.cursor.execute(query)
             return self.cursor.fetchall()
         except Error as e:
@@ -346,7 +558,7 @@ class DatabaseModel:
     def get_student_users(self) -> List[Dict]:
         """Get all student users"""
         try:
-            query = "SELECT * FROM users WHERE role = 'student' ORDER BY name"
+            query = "SELECT * FROM students ORDER BY name"
             self.cursor.execute(query)
             return self.cursor.fetchall()
         except Error as e:

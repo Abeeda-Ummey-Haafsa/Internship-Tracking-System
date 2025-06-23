@@ -2,6 +2,7 @@ from typing import Optional, List, Dict, Any
 from trial_project.models.database_model import DatabaseModel
 from trial_project.views.dashboard_view import DashboardView
 from trial_project.views.login_view import LoginView
+from tkinter import messagebox
 
 
 class InternshipController:
@@ -18,23 +19,66 @@ class InternshipController:
         self.login_view = LoginView(self)
         self.login_view.run()
     
-    def login(self, email: str, password: str):
+    def login(self, email: str, password: str, role: str):
         """Handle user login"""
-        user = self.model.authenticate_user(email, password)
+        if not email or not password or not role:
+            messagebox.showerror("Error", "Please fill in all fields.")
+            return
+        
+        user = self.model.authenticate_user(email, password, role)
         if user:
             self.current_user = user
             self.login_view.root.destroy()
             self.show_dashboard()
         else:
-            self.login_view.show_error("Invalid email or password")
+            messagebox.showerror("Login Failed", "Invalid email, password, or role")
     
-    def register(self, name: str, email: str, password: str, role: str, department: str):
+    def register(self, role: str, **kwargs):
         """Handle user registration"""
-        if self.model.create_user(name, email, password, role, department):
-            self.login_view.show_success("Registration successful! Please login.")
-            self.login_view.clear_forms()
+        # Validate required fields based on role
+        required_fields = ['full_name', 'email', 'password']
+        
+        if role.lower() != 'company' and role.lower() != 'admin':
+            required_fields.append('department')
+        
+        if role.lower() == 'student':
+            required_fields.append('cgpa')
+        elif role.lower() == 'secretary':
+            required_fields.append('faculty_id')
+        
+        # Check if all required fields are present and not empty
+        for field in required_fields:
+            if field not in kwargs or not kwargs[field]:
+                messagebox.showerror("Registration Error", f"Please fill in the {field.replace('_', ' ').title()} field.")
+                return
+        
+        # Validate CGPA for students
+        if role.lower() == 'student':
+            try:
+                cgpa = float(kwargs['cgpa'])
+                if cgpa < 2.0 or cgpa > 4.0:
+                    messagebox.showerror("Registration Error", "CGPA must be between 2.00 and 4.00")
+                    return
+            except ValueError:
+                messagebox.showerror("Registration Error", "CGPA must be a valid number")
+                return
+        
+        # Validate faculty_id for secretary
+        if role.lower() == 'secretary' and 'faculty_id' in kwargs:
+            try:
+                kwargs['faculty_id'] = int(kwargs['faculty_id'])
+            except ValueError:
+                messagebox.showerror("Registration Error", "Faculty ID must be a valid number")
+                return
+        
+        # Attempt to create user
+        if self.model.create_user_by_role(role, **kwargs):
+            messagebox.showinfo("Success", "Registration successful! Please login.")
+            # Clear the registration form if available
+            if hasattr(self.login_view, 'clear_forms'):
+                self.login_view.clear_forms()
         else:
-            self.login_view.show_error("Registration failed. Email might already exist.")
+            messagebox.showerror("Registration Error", "Registration failed. Email might already exist or invalid data provided.")
     
     def show_dashboard(self):
         """Show role-based dashboard"""
@@ -44,6 +88,8 @@ class InternshipController:
     def logout(self):
         """Handle user logout"""
         self.current_user = None
+        if self.dashboard_view:
+            self.dashboard_view.root.destroy()
         self.start_application()
     
     # Application management
@@ -89,7 +135,8 @@ class InternshipController:
     
     def create_company(self, name: str, contact_person: str, email: str, phone: str, address: str) -> bool:
         """Create new company"""
-        return self.model.create_company(name, contact_person, email, phone, address)
+        # This method might need to be updated based on your new company table structure
+        return self.model.create_company_user(name, email, "default_password")
     
     # Faculty management
     def get_faculty_users(self) -> List[Dict]:
@@ -103,6 +150,46 @@ class InternshipController:
     def assign_faculty(self, faculty_id: int, student_id: int) -> bool:
         """Assign faculty to student"""
         return self.model.assign_faculty(faculty_id, student_id)
+    
+    # Department management
+    def get_all_departments(self) -> List[Dict]:
+        """Get all departments"""
+        return self.model.get_all_departments()
+    
+    def get_department_names(self) -> List[str]:
+        """Get department names for dropdowns"""
+        departments = self.get_all_departments()
+        return [dept['name'] for dept in departments]
+    
+    # User management utilities
+    def get_current_user_info(self) -> Optional[Dict]:
+        """Get current user information"""
+        return self.current_user
+    
+    def get_user_role(self) -> str:
+        """Get current user role"""
+        return self.current_user['role'] if self.current_user else None
+    
+    def get_user_id(self) -> int:
+        """Get current user ID"""
+        return self.current_user['user_id'] if self.current_user else None
+    
+    def get_user_name(self) -> str:
+        """Get current user name"""
+        return self.current_user['name'] if self.current_user else None
+    
+    def get_user_email(self) -> str:
+        """Get current user email"""
+        return self.current_user['email'] if self.current_user else None
+    
+    def get_user_department(self) -> str:
+        """Get current user department (for students, faculty, secretary)"""
+        if self.current_user and 'department_id' in self.current_user:
+            departments = self.get_all_departments()
+            for dept in departments:
+                if dept['department_id'] == self.current_user['department_id']:
+                    return dept['name']
+        return None
     
     def cleanup(self):
         """Cleanup resources"""
