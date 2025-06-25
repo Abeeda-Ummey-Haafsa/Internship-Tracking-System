@@ -12,3 +12,8 @@ python -m tkinter ->to check if tkinter is working properly
 
 venv\Scripts\activate -> To reactivate
 or E:\DBMS Project\trial_project>Scripts\activate 
+
+
+git add .
+git commit -m "message"
+git push

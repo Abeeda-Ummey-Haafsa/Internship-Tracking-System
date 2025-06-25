@@ -151,8 +151,8 @@ class RegistrationForm:
 
         if self.role == "Student":
             self.add_field(frame, "CGPA")
-        elif self.role == "Secretary":
-            self.add_faculty_dropdown(frame)
+        # elif self.role == "Secretary":
+        #     self.add_faculty_dropdown(frame)
 
     def add_field(self, frame, label, show=None):
         """Add a text entry field"""
@@ -202,12 +202,12 @@ class RegistrationForm:
             data['department'] = self.department_var.get()
         
         # Add faculty_id for secretary
-        if self.faculty_var and self.role == "Secretary":
-            faculty_selection = self.faculty_var.get()
-            if faculty_selection:
-                # Extract faculty_id from "ID - Name" format
-                faculty_id = faculty_selection.split(" - ")[0]
-                data['faculty_id'] = faculty_id
+        # if self.faculty_var and self.role == "Secretary":
+        #     faculty_selection = self.faculty_var.get()
+        #     if faculty_selection:
+        #         # Extract faculty_id from "ID - Name" format
+        #         faculty_id = faculty_selection.split(" - ")[0]
+        #         data['faculty_id'] = faculty_id
         
         # Validate required fields
         required_fields = ['full_name', 'email', 'password']
@@ -217,8 +217,8 @@ class RegistrationForm:
         
         if self.role == "Student":
             required_fields.append('cgpa')
-        elif self.role == "Secretary":
-            required_fields.append('faculty_id')
+        # elif self.role == "Secretary":
+        #     required_fields.append('department')
         
         # Check if all required fields are filled
         missing_fields = []

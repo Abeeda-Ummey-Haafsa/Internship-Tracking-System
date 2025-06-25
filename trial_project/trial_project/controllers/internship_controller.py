@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from trial_project.models.database_model import DatabaseModel
-from trial_project.views.dashboard_view import DashboardView
+from views.dashboard_view.dashboard_view import DashboardView
 from trial_project.views.login_view import LoginView
 from tkinter import messagebox
 
@@ -43,8 +43,6 @@ class InternshipController:
         
         if role.lower() == 'student':
             required_fields.append('cgpa')
-        elif role.lower() == 'secretary':
-            required_fields.append('faculty_id')
         
         # Check if all required fields are present and not empty
         for field in required_fields:
@@ -63,13 +61,6 @@ class InternshipController:
                 messagebox.showerror("Registration Error", "CGPA must be a valid number")
                 return
         
-        # Validate faculty_id for secretary
-        if role.lower() == 'secretary' and 'faculty_id' in kwargs:
-            try:
-                kwargs['faculty_id'] = int(kwargs['faculty_id'])
-            except ValueError:
-                messagebox.showerror("Registration Error", "Faculty ID must be a valid number")
-                return
         
         # Attempt to create user
         if self.model.create_user_by_role(role, **kwargs):
@@ -92,22 +83,18 @@ class InternshipController:
             self.dashboard_view.root.destroy()
         self.start_application()
     
+    # Admin Management
+    def get_total_students_for_faculty(self, faculty_id: int) -> int:
+        return self.model.get_total_students_for_faculty(faculty_id)
+
     # Application management
     def get_student_applications(self, student_id: int) -> List[Dict]:
         """Get applications for a student"""
         return self.model.get_applications_by_student(student_id)
     
-    def get_pending_applications(self) -> List[Dict]:
-        """Get pending applications for admin"""
-        return self.model.get_pending_applications()
-    
     def create_application(self, student_id: int, company_id: int, quota_id: int = None, self_found: bool = False) -> bool:
         """Create new application"""
         return self.model.create_application(student_id, company_id, quota_id, self_found)
-    
-    def update_application_status(self, app_id: int, status: str) -> bool:
-        """Update application status"""
-        return self.model.update_application_status(app_id, status)
     
     # Quota management
     def get_available_quotas(self, department: str = None) -> List[Dict]:
@@ -139,13 +126,32 @@ class InternshipController:
         return self.model.create_company_user(name, email, "default_password")
     
     # Faculty management
-    def get_faculty_users(self) -> List[Dict]:
-        """Get faculty users"""
-        return self.model.get_faculty_users()
+    def get_students_under_faculty(self, faculty_id: int) -> List[Dict]:
+        return self.model.get_students_assigned_to_faculty(faculty_id)
     
-    def get_student_users(self) -> List[Dict]:
-        """Get student users"""
-        return self.model.get_student_users()
+    def get_reports_for_faculty(self, faculty_id: int) -> List[Dict]:
+        return self.model.get_reports_assigned_to_faculty(faculty_id)
+    
+    def submit_report_grade(self, report_id: int, grade: str, comments: str) -> bool:
+        return self.model.grade_student_report(report_id, grade, comments)
+    
+    # Secretary Management
+    #TAB-1: related to "Pending Applications" tab
+    def get_pending_applications(self) -> List[Dict]:
+        """Get pending applications for secretary"""
+        return self.model.get_pending_applications()
+    
+    def update_application_status(self, app_id: int, status: str) -> bool:
+        """Update application status"""
+        return self.model.update_application_status(app_id, status)
+
+    #TAB-2: related to "Assign Faculty" tab
+    def get_approved_unassigned_students(self) -> List[Dict]:
+        return self.model.get_approved_unassigned_students()
+    
+    def get_faculty_users(self) -> List[Dict]:
+        """Get faculty users from the model"""
+        return self.model.get_faculty_users()
     
     def assign_faculty(self, faculty_id: int, student_id: int) -> bool:
         """Assign faculty to student"""

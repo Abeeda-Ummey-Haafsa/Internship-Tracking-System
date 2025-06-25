@@ -251,13 +251,7 @@ class DatabaseModel:
                     faculty_id=kwargs.get('faculty_id')
                 )
             elif role.lower() == 'company':
-                return self.create_company_user(
-                    name=kwargs['full_name'],
-                    email=kwargs['email'],
-                    password_hash=password_hash
-                )
-            elif role.lower() == 'admin':
-                return self.create_admin(
+                return self.create_company(
                     name=kwargs['full_name'],
                     email=kwargs['email'],
                     password_hash=password_hash
@@ -321,7 +315,7 @@ class DatabaseModel:
             print(f"Error creating secretary: {e}")
             return False
     
-    def create_company_user(self, name: str, email: str, password_hash: str) -> bool:
+    def create_company(self, name: str, email: str, password_hash: str) -> bool:
         """Create a new company user"""
         try:
             query = """
@@ -333,20 +327,6 @@ class DatabaseModel:
             return True
         except Error as e:
             print(f"Error creating company: {e}")
-            return False
-    
-    def create_admin(self, name: str, email: str, password_hash: str) -> bool:
-        """Create a new admin"""
-        try:
-            query = """
-                INSERT INTO admins (name, email, password_hash)
-                VALUES (%s, %s, %s)
-            """
-            self.cursor.execute(query, (name, email, password_hash))
-            self.connection.commit()
-            return True
-        except Error as e:
-            print(f"Error creating admin: {e}")
             return False
     
     def authenticate_user(self, email: str, password: str, role: str) -> Optional[Dict]:
@@ -373,42 +353,23 @@ class DatabaseModel:
             
             if user and self.verify_password(password, user['password_hash']):
                 user['role'] = role.lower()
-                user['user_id'] = user[id_field]  # Standardize user_id field
+                user['user_id'] = user[id_field] 
                 return user
             return None
         except Error as e:
             print(f"Error authenticating user: {e}")
             return None
     
-    def get_user_by_id_and_role(self, user_id: int, role: str) -> Optional[Dict]:
-        """Get user by ID and role"""
+    # Admin Management
+    def get_total_students_for_faculty(self, faculty_id: int) -> int:
         try:
-            table_map = {
-                'student': 'students',
-                'faculty': 'faculties',
-                'secretary': 'secretaries', 
-                'company': 'companies',
-                'admin': 'admins'
-            }
-            
-            table = table_map.get(role.lower())
-            if not table:
-                return None
-            
-            id_field = f"{role.lower()}_id"
-            query = f"SELECT * FROM {table} WHERE {id_field} = %s"
-            self.cursor.execute(query, (user_id,))
-            user = self.cursor.fetchone()
-            
-            if user:
-                user['role'] = role.lower()
-                user['user_id'] = user[id_field]
-            
-            return user
+            query = "SELECT COUNT(*) FROM student_faculty_map WHERE faculty_id = %s"
+            self.cursor.execute(query, (faculty_id,))
+            return self.cursor.fetchone()[0]
         except Error as e:
-            print(f"Error getting user: {e}")
-            return None
-    
+            print(f"Error getting total students: {e}")
+            return 0
+
     # Company Management
     def get_all_companies(self) -> List[Dict]:
         """Get all companies"""
@@ -420,6 +381,133 @@ class DatabaseModel:
             print(f"Error getting companies: {e}")
             return []
     
+    # Faculty Management 
+    def get_students_assigned_to_faculty(self, faculty_id: int) -> List[Dict]:
+        try:
+            query = """
+                SELECT s.student_id, s.name, s.email, s.cgpa, d.name
+                FROM faculty_assignments fa
+                JOIN students s ON fa.student_id = s.student_id
+                JOIN department d ON s.department_id = d.department_id
+                WHERE fa.faculty_id = %s
+            """
+            self.cursor.execute(query, (faculty_id,))
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error retrieving assigned students: {e}")
+            return []
+
+    def get_reports_assigned_to_faculty(self, faculty_id: int) -> List[Dict]:
+        try:
+            query = """
+                SELECT r.report_id, s.name as student_name, r.grade, r.comments, r.submitted_at
+                FROM reports r
+                JOIN students s ON r.student_id = s.student_id
+                WHERE r.faculty_id = %s
+            """
+            self.cursor.execute(query, (faculty_id,))
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error retrieving reports: {e}")
+            return []
+        
+    def grade_student_report(self, report_id: int, grade: str, comments: str) -> bool:
+        try:
+            query = "UPDATE reports SET grade = %s, comments = %s WHERE report_id = %s"
+            self.cursor.execute(query, (grade, comments, report_id))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error grading report: {e}")
+            return False
+
+    # Secretary Management
+    #TAB-2: related to "Assign Faculty" tab
+    def get_faculty_users(self) -> List[Dict]:
+        try:
+            query = "SELECT faculty_id, name, email, department, created_at FROM faculties ORDER BY name"
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting faculty: {e}")
+            return []
+
+    def get_student_users(self) -> List[Dict]:
+        """Get all student users"""
+        try:
+            query = "SELECT * FROM students ORDER BY name"
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting students: {e}")
+            return []
+
+    def get_approved_unassigned_students(self) -> List[Dict]:
+        """Get students with approved applications and no faculty assigned"""
+        try:
+            query = """
+                SELECT DISTINCT s.student_id, s.name, s.email
+                FROM students s
+                JOIN applications a ON s.student_id = a.student_id
+                LEFT JOIN faculty_assignments fa ON s.student_id = fa.student_id
+                WHERE a.status = 'approved' AND fa.student_id IS NULL
+                ORDER BY s.name
+            """
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting approved and unassigned students: {e}")
+            return []
+
+
+    def assign_faculty(self, faculty_id: int, student_id: int) -> bool:
+        """Assign faculty to student"""
+        try:
+            query = """
+                INSERT INTO faculty_assignments (faculty_id, student_id)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE faculty_id = %s
+            """
+            self.cursor.execute(query, (faculty_id, student_id, faculty_id))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error assigning faculty: {e}")
+            return False
+
+    #TAB-1: related to "Pending Applications" tab
+    def get_pending_applications(self) -> List[Dict]:
+        """Get all pending applications for admin review"""
+        try:
+            query = """
+                SELECT a.app_id, a.self_found, a.application_date,
+                   s.student_id, s.name AS student_name, s.email AS student_email,
+                   c.name AS company_name,
+                   q.department
+                FROM applications a
+                JOIN students s ON a.student_id = s.student_id
+                JOIN companies c ON a.company_id = c.company_id
+                LEFT JOIN quotas q ON a.quota_id = q.quota_id
+                WHERE a.status = 'pending'
+                ORDER BY a.application_date DESC
+            """
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting pending applications: {e}")
+            return []
+    
+    def update_application_status(self, app_id: int, status: str) -> bool:
+        """Update application status"""
+        try:
+            query = "UPDATE applications SET status = %s WHERE app_id = %s"
+            self.cursor.execute(query, (status, app_id))
+            self.connection.commit()
+            return True
+        except Error as e:
+            print(f"Error updating application status: {e}")
+            return False
+
     # Quota Management
     def create_quota(self, company_id: int, department: str, total_slots: int, deadline: str, description: str) -> bool:
         """Create a new quota"""
@@ -499,71 +587,11 @@ class DatabaseModel:
             print(f"Error getting applications: {e}")
             return []
     
-    def get_pending_applications(self) -> List[Dict]:
-        """Get all pending applications for admin review"""
-        try:
-            query = """
-                SELECT a.*, s.name as student_name, s.email as student_email, 
-                       c.name as company_name, q.department
-                FROM applications a
-                JOIN students s ON a.student_id = s.student_id
-                JOIN companies c ON a.company_id = c.company_id
-                LEFT JOIN quotas q ON a.quota_id = q.quota_id
-                WHERE a.status = 'pending'
-                ORDER BY a.application_date
-            """
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-        except Error as e:
-            print(f"Error getting pending applications: {e}")
-            return []
     
-    def update_application_status(self, app_id: int, status: str) -> bool:
-        """Update application status"""
-        try:
-            query = "UPDATE applications SET status = %s WHERE app_id = %s"
-            self.cursor.execute(query, (status, app_id))
-            self.connection.commit()
-            return True
-        except Error as e:
-            print(f"Error updating application status: {e}")
-            return False
     
-    # Faculty Assignment
-    def assign_faculty(self, faculty_id: int, student_id: int) -> bool:
-        """Assign faculty to student"""
-        try:
-            query = """
-                INSERT INTO faculty_assignments (faculty_id, student_id)
-                VALUES (%s, %s)
-                ON DUPLICATE KEY UPDATE faculty_id = %s
-            """
-            self.cursor.execute(query, (faculty_id, student_id, faculty_id))
-            self.connection.commit()
-            return True
-        except Error as e:
-            print(f"Error assigning faculty: {e}")
-            return False
     
-    def get_faculty_users(self) -> List[Dict]:
-        """Get all faculty users"""
-        try:
-            query = "SELECT * FROM faculties ORDER BY name"
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-        except Error as e:
-            print(f"Error getting faculty: {e}")
-            return []
     
-    def get_student_users(self) -> List[Dict]:
-        """Get all student users"""
-        try:
-            query = "SELECT * FROM students ORDER BY name"
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-        except Error as e:
-            print(f"Error getting students: {e}")
-            return []
+    
     
     def close_connection(self):
         """Close database connection"""
