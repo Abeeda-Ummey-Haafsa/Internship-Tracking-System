@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
 from trial_project.models.database_model import DatabaseModel
+from views.dashboard_view.Student_dashboard import StudentDashboard
 from views.dashboard_view.dashboard_view import DashboardView
 from trial_project.views.login_view import LoginView
 from tkinter import messagebox
@@ -73,8 +74,21 @@ class InternshipController:
     
     def show_dashboard(self):
         """Show role-based dashboard"""
-        self.dashboard_view = DashboardView(self, self.current_user)
+        role = self.current_user['role']
+        
+        if role == 'student':
+            self.dashboard_view = StudentDashboard(self, self.current_user)
+        elif role == 'faculty':
+            # dashboard = FacultyDashboard(self, self.current_user)
+            messagebox.showinfo("Coming Soon", "Faculty Dashboard not yet implemented.")
+            return
+        else:
+            messagebox.showerror("Unsupported Role", f"No dashboard implemented for role: {role}")
+            return
+        
         self.dashboard_view.run()
+        # self.dashboard_view = DashboardView(self, self.current_user)
+        # self.dashboard_view.run()
     
     def logout(self):
         """Handle user logout"""
@@ -84,14 +98,43 @@ class InternshipController:
         self.start_application()
     
     # Admin Management
-    def get_total_students_for_faculty(self, faculty_id: int) -> int:
+    # TAB-01: Related To 'View Faculty' Tab
+    def get_faculty_users(self):
+        return self.model.get_all_faculty_with_department()
+    def get_total_students_for_faculty(self, faculty_id):
         return self.model.get_total_students_for_faculty(faculty_id)
+    def get_faculties_by_department(self, department_id):
+        return self.model.get_faculties_by_department(department_id)
+    def get_all_departments(self):
+        return self.model.get_all_departments()
+    def delete_faculty_by_id(self, faculty_id):
+        return self.model.delete_faculty_by_id(faculty_id)
+    def verify_faculty(self, faculty_id):
+        return self.model.set_faculty_verified(int(faculty_id))
+
+
+    # TAB-02: Related To 'View Secretary' Tab
+    def get_secretary_users(self):
+        return self.model.get_all_secretary_with_department()
+    def get_secretaries_by_department(self, department_id):
+        return self.model.get_secretaries_by_department(department_id)
+    def delete_secretary_by_id(self, secretary_id):
+        return self.model.delete_secretary_by_id(secretary_id)
+    
+    # TAB-03: Related To 'View Company' Tab
+    def get_all_companies(self):
+        return self.model.get_all_companies()
+    def get_companies_by_registration(self, is_registered):
+        return self.model.get_companies_by_registration(is_registered)
+    def delete_company_by_id(self, company_id):
+        return self.model.delete_company_by_id(company_id)
+    def verify_company(self, company_id):
+        return self.model.set_company_verified(company_id)
 
     # Application management
     def get_student_applications(self, student_id: int) -> List[Dict]:
         """Get applications for a student"""
         return self.model.get_applications_by_student(student_id)
-    
     def create_application(self, student_id: int, company_id: int, quota_id: int = None, self_found: bool = False) -> bool:
         """Create new application"""
         return self.model.create_application(student_id, company_id, quota_id, self_found)
@@ -116,9 +159,9 @@ class InternshipController:
         return self.model.create_quota(company_id, department, total_slots, deadline, description)
     
     # Company management
-    def get_all_companies(self) -> List[Dict]:
-        """Get all companies"""
-        return self.model.get_all_companies()
+    # def get_all_companies(self) -> List[Dict]:
+    #     """Get all companies"""
+    #     return self.model.get_all_companies()
     
     def create_company(self, name: str, contact_person: str, email: str, phone: str, address: str) -> bool:
         """Create new company"""
@@ -146,12 +189,12 @@ class InternshipController:
         return self.model.update_application_status(app_id, status)
 
     #TAB-2: related to "Assign Faculty" tab
-    def get_approved_unassigned_students(self) -> List[Dict]:
-        return self.model.get_approved_unassigned_students()
+    def get_approved_unassigned_students_by_secretary(self, secretary_id: int) -> List[Dict]:
+        return self.model.get_approved_unassigned_students_by_secretary(secretary_id)
     
-    def get_faculty_users(self) -> List[Dict]:
+    def get_faculty_by_secretary(self, secretary_id: int) -> List[Dict]:
         """Get faculty users from the model"""
-        return self.model.get_faculty_users()
+        return self.model.get_faculty_users_by_secretary(secretary_id)
     
     def assign_faculty(self, faculty_id: int, student_id: int) -> bool:
         """Assign faculty to student"""
@@ -168,26 +211,25 @@ class InternshipController:
         return [dept['name'] for dept in departments]
     
     # User management utilities
-    def get_current_user_info(self) -> Optional[Dict]:
-        """Get current user information"""
-        return self.current_user
-    
-    def get_user_role(self) -> str:
-        """Get current user role"""
-        return self.current_user['role'] if self.current_user else None
-    
+    # def get_current_user_info(self) -> Optional[Dict]:
+    #     """Get current user information"""
+    #     return self.current_user
+    # def get_user_name(self):
+    #     return self.current_user.get('name', 'Unknown')
+    # def get_user_email(self):
+    #     return self.current_user.get('email', 'N/A')
+    # def get_user_role(self) -> str:
+    #     """Get current user role"""
+    #     return self.current_user['role'] if self.current_user else None
     def get_user_id(self) -> int:
         """Get current user ID"""
         return self.current_user['user_id'] if self.current_user else None
-    
     def get_user_name(self) -> str:
         """Get current user name"""
         return self.current_user['name'] if self.current_user else None
-    
     def get_user_email(self) -> str:
         """Get current user email"""
         return self.current_user['email'] if self.current_user else None
-    
     def get_user_department(self) -> str:
         """Get current user department (for students, faculty, secretary)"""
         if self.current_user and 'department_id' in self.current_user:

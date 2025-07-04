@@ -94,7 +94,7 @@ class DatabaseModel:
                         password_hash VARCHAR(255) NOT NULL,
                         phone VARCHAR(20),
                         address TEXT,
-                        registered BOOLEAN DEFAULT TRUE,
+                        registered BOOLEAN DEFAULT FALSE,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """,
@@ -361,14 +361,126 @@ class DatabaseModel:
             return None
     
     # Admin Management
-    def get_total_students_for_faculty(self, faculty_id: int) -> int:
+    
+    def get_all_faculty_with_department(self):
+        query = """
+            SELECT f.faculty_id, f.name, f.email, f.created_at, d.name AS department
+            FROM faculties f
+            LEFT JOIN department d ON f.department_id = d.department_id
+            ORDER BY f.name
+        """
+        self.cursor.execute(query)
+        return self.cursor.fetchall()
+    def get_total_students_for_faculty(self, faculty_id):
+        query = """
+            SELECT COUNT(*) AS total
+            FROM faculty_assignments
+            WHERE faculty_id = %s
+        """
+        self.cursor.execute(query, (faculty_id,))
+        result = self.cursor.fetchone()
+        return result["total"] if result else 0
+    def get_faculties_by_department(self, department_id):
+        query = """
+            SELECT f.faculty_id, f.name, f.email, d.name AS department, f.created_at
+            FROM faculties f
+            JOIN department d ON f.department_id = d.department_id
+            WHERE f.department_id = %s
+        """
+        self.cursor.execute(query, (department_id,))
+        return self.cursor.fetchall()
+    def get_all_departments(self):
+        self.cursor.execute("SELECT department_id, name FROM department ORDER BY name")
+        return self.cursor.fetchall()
+    def delete_faculty_by_id(self, faculty_id):
         try:
-            query = "SELECT COUNT(*) FROM student_faculty_map WHERE faculty_id = %s"
-            self.cursor.execute(query, (faculty_id,))
-            return self.cursor.fetchone()[0]
-        except Error as e:
-            print(f"Error getting total students: {e}")
-            return 0
+            # Remove dependencies first
+            self.cursor.execute("DELETE FROM faculty_assignments WHERE faculty_id = %s", (faculty_id,))
+            self.cursor.execute("DELETE FROM secretaries WHERE faculty_id = %s", (faculty_id,))
+            self.cursor.execute("DELETE FROM reports WHERE faculty_id = %s", (faculty_id,))
+
+            # Delete from faculties
+            self.cursor.execute("DELETE FROM faculties WHERE faculty_id = %s", (faculty_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+    def set_faculty_verified(self, faculty_id):
+        try:
+            self.cursor.execute("UPDATE faculties SET verified = TRUE WHERE faculty_id = %s", (faculty_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+        
+    # TAB-02: Related To 'View Secretary' Tab
+    def get_all_secretary_with_department(self):
+        query = """
+        SELECT s.secretary_id, s.name, s.email, d.name AS department, s.created_at
+        FROM secretaries s
+        LEFT JOIN department d ON s.department_id = d.department_id
+        ORDER BY s.name
+        """
+        try:
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Exception as e:
+            raise e
+    def get_secretaries_by_department(self, department_id):
+        query = """
+            SELECT s.secretary_id, s.name, s.email, d.name AS department, s.created_at
+            FROM secretaries s
+            LEFT JOIN department d ON s.department_id = d.department_id
+            WHERE s.department_id = %s
+            ORDER BY s.name
+        """
+        self.cursor.execute(query, (department_id,))
+        return self.cursor.fetchall()
+    def delete_secretary_by_id(self, secretary_id):
+        try:
+            self.cursor.execute("DELETE FROM secretaries WHERE secretary_id = %s", (secretary_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+
+    # TAB-03: Related To 'View Company' Tab
+    def get_all_companies(self):
+        query = """
+            SELECT company_id, name, contact_person, email, phone, address, registered
+            FROM companies
+            ORDER BY name
+        """
+        self.cursor.execute(query)
+        return [dict(row) for row in self.cursor.fetchall()]
+    
+    
+
+    def get_companies_by_registration(self, is_registered):
+        query = """
+            SELECT company_id, name, contact_person, email, phone, address, registered
+            FROM companies
+            WHERE registered = %s
+            ORDER BY name
+        """
+        self.cursor.execute(query, (is_registered,))
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def delete_company_by_id(self, company_id):
+        try:
+            self.cursor.execute("DELETE FROM companies WHERE company_id = %s", (company_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
+
+    def set_company_verified(self, company_id):
+        try:
+            self.cursor.execute("UPDATE companies SET registered = TRUE WHERE company_id = %s", (company_id,))
+            self.connection.commit()
+        except Exception as e:
+            self.connection.rollback()
+            raise e
 
     # Company Management
     def get_all_companies(self) -> List[Dict]:
@@ -385,11 +497,12 @@ class DatabaseModel:
     def get_students_assigned_to_faculty(self, faculty_id: int) -> List[Dict]:
         try:
             query = """
-                SELECT s.student_id, s.name, s.email, s.cgpa, d.name
+                SELECT DISTINCT s.student_id, s.name, s.email, s.cgpa, d.name AS department
                 FROM faculty_assignments fa
                 JOIN students s ON fa.student_id = s.student_id
                 JOIN department d ON s.department_id = d.department_id
-                WHERE fa.faculty_id = %s
+                JOIN applications a ON s.student_id = a.student_id
+                WHERE fa.faculty_id = %s AND a.status = 'approved'
             """
             self.cursor.execute(query, (faculty_id,))
             return self.cursor.fetchall()
@@ -423,40 +536,39 @@ class DatabaseModel:
 
     # Secretary Management
     #TAB-2: related to "Assign Faculty" tab
-    def get_faculty_users(self) -> List[Dict]:
-        try:
-            query = "SELECT faculty_id, name, email, department, created_at FROM faculties ORDER BY name"
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-        except Error as e:
-            print(f"Error getting faculty: {e}")
-            return []
-
-    def get_student_users(self) -> List[Dict]:
-        """Get all student users"""
-        try:
-            query = "SELECT * FROM students ORDER BY name"
-            self.cursor.execute(query)
-            return self.cursor.fetchall()
-        except Error as e:
-            print(f"Error getting students: {e}")
-            return []
-
-    def get_approved_unassigned_students(self) -> List[Dict]:
-        """Get students with approved applications and no faculty assigned"""
+    def get_faculty_users_by_secretary(self, secretary_id: int) -> List[Dict]:
+        """Get faculty from the secretary's department"""
         try:
             query = """
-                SELECT DISTINCT s.student_id, s.name, s.email
+                SELECT f.faculty_id, f.name
+                FROM faculties f
+                JOIN secretaries s ON f.department_id = s.department_id
+                WHERE s.secretary_id = %s
+                ORDER BY f.faculty_id
+            """
+            self.cursor.execute(query, (secretary_id,))
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting faculty by secretary: {e}")
+            return []
+
+    def get_approved_unassigned_students_by_secretary(self, secretary_id: int) -> List[Dict]:
+        """Get approved and unassigned students from secretary's department"""
+        try:
+            query = """
+                SELECT DISTINCT s.student_id, s.name
                 FROM students s
                 JOIN applications a ON s.student_id = a.student_id
                 LEFT JOIN faculty_assignments fa ON s.student_id = fa.student_id
+                JOIN secretaries sec ON s.department_id = sec.department_id
                 WHERE a.status = 'approved' AND fa.student_id IS NULL
+                AND sec.secretary_id = %s
                 ORDER BY s.name
             """
-            self.cursor.execute(query)
+            self.cursor.execute(query, (secretary_id,))
             return self.cursor.fetchall()
         except Error as e:
-            print(f"Error getting approved and unassigned students: {e}")
+            print(f"Error getting approved students by secretary: {e}")
             return []
 
 
@@ -474,6 +586,17 @@ class DatabaseModel:
         except Error as e:
             print(f"Error assigning faculty: {e}")
             return False
+
+    def get_student_users(self) -> List[Dict]:
+        """Get all student users"""
+        try:
+            query = "SELECT * FROM students ORDER BY name"
+            self.cursor.execute(query)
+            return self.cursor.fetchall()
+        except Error as e:
+            print(f"Error getting students: {e}")
+            return []
+
 
     #TAB-1: related to "Pending Applications" tab
     def get_pending_applications(self) -> List[Dict]:

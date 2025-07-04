@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from typing import Optional, List, Dict, Any
+import csv 
+from tkinter import filedialog, messagebox
 
 from trial_project.views.dialogs.application_dialog import ApplicationDialog
 from trial_project.views.dialogs.self_found_dialog import SelfFoundDialog
@@ -81,6 +83,11 @@ class DashboardView:
     
     def setup_secretary_tabs(self):
         """Setup tabs for admin role"""
+        # View All Faculty Tab
+        all_faculty_frame = ttk.Frame(self.notebook)
+        self.notebook.add(all_faculty_frame, text="View Faculty List")
+        self.setup_view_faculty_tab(all_faculty_frame)
+
         # Pending Applications tab
         pending_frame = ttk.Frame(self.notebook)
         self.notebook.add(pending_frame, text="Pending Applications")
@@ -113,31 +120,15 @@ class DashboardView:
         self.notebook.add(all_faculty_frame, text="View Faculty List")
         self.setup_view_faculty_tab(all_faculty_frame)
 
-        # Remove Faculty tab
-        remove_faculty_frame = ttk.Frame(self.notebook)
-        self.notebook.add(remove_faculty_frame, text="Remove Faculty")
-        #self.setup_remove_faculty_tab(remove_faculty_frame)
-
         # View All Secretary Tab
         all_secretary_frame = ttk.Frame(self.notebook)
         self.notebook.add(all_secretary_frame, text="View Secretary List")
-        #self.setup_view_secretary_tab(all_secretary_frame)
-
-        # Remove Secretary tab
-        remove_secretary_frame = ttk.Frame(self.notebook)
-        self.notebook.add(remove_secretary_frame, text="Remove Secretary")
-        #self.setup_remove_secretary_tab(remove_secretary_frame)
+        self.setup_view_secretary_tab(all_secretary_frame)
 
         # View All Company Tab
         all_company_frame = ttk.Frame(self.notebook)
         self.notebook.add(all_company_frame, text="View Company List")
-        #self.setup_view_company_tab(all_company_frame)
-
-        # Remove Company tab
-        remove_company_frame = ttk.Frame(self.notebook)
-        self.notebook.add(remove_company_frame, text="Remove Company")
-        #self.setup_remove_company_tab(remove_company_frame)
-    
+        self.setup_view_company_tab(all_company_frame)
 
     # RELATED TO FACULTY TAB
     def setup_my_students_tab(self, parent):
@@ -255,31 +246,37 @@ class DashboardView:
 
 
     # RELATED TO ADMIN TAB
+    # TAB-01: Related To 'View Faculty' Tab
     def setup_view_faculty_tab(self, parent):
         """Setup view all faculty tab"""
-        # Top frame for controls
+        style = ttk.Style()
+        style.configure("Success.TButton", background="green", foreground="black")
+        style.configure("Info.TButton", background="blue", foreground="black")
+        style.configure("Danger.TButton", background="red", foreground="black")
+
         top_frame = ttk.Frame(parent)
         top_frame.pack(fill=tk.X, padx=10, pady=10)
-    
+
         ttk.Label(top_frame, text="Faculty Management", font=("Arial", 14, "bold")).pack(side=tk.LEFT)
-        ttk.Button(top_frame, text="Refresh", command=self.refresh_faculty_list).pack(side=tk.RIGHT)
-        # ttk.Button(top_frame, text="Export to CSV", command=self.export_faculty_csv).pack(side=tk.RIGHT, padx=(0, 10))
+        ttk.Button(top_frame, text="Refresh", command=self.refresh_faculty_list, style="Success.TButton").pack(side=tk.RIGHT)
+        ttk.Button(top_frame, text="Verify", command=self.verify_selected_faculty, style="Info.TButton").pack(side=tk.RIGHT, padx=(5, 5))
+        ttk.Button(top_frame, text="Remove", command=self.remove_selected_faculty, style="Danger.TButton").pack(side=tk.RIGHT, padx=(0, 10))
     
         # Filter frame
-        # filter_frame = ttk.Frame(parent)
-        # filter_frame.pack(fill=tk.X, padx=10, pady=5)
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, padx=10, pady=5)
     
-        # ttk.Label(filter_frame, text="Filter by Department:").pack(side=tk.LEFT)
-        # self.faculty_dept_filter = ttk.Combobox(filter_frame, width=20)
-        # self.faculty_dept_filter.pack(side=tk.LEFT, padx=(10, 0))
-        # ttk.Button(filter_frame, text="Apply Filter", command=self.filter_faculty).pack(side=tk.LEFT, padx=(10, 0))
-        # ttk.Button(filter_frame, text="Clear Filter", command=self.clear_faculty_filter).pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Label(filter_frame, text="Filter by Department:").pack(side=tk.LEFT)
+        self.faculty_dept_filter = ttk.Combobox(filter_frame, width=20)
+        self.faculty_dept_filter.pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Apply Filter", command=self.filter_faculty).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Clear Filter", command=self.clear_faculty_filter).pack(side=tk.LEFT, padx=(5, 0))
     
         # Treeview Frame
         tree_frame = ttk.Frame(parent)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        columns = ("ID", "Name", "Email", "Department", "Created Date", "Total Students")
+        columns = ("ID", "Name", "Email", "Department", "Joining Date", "Total Students", "Verification")
         self.faculty_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
 
         for col in columns:
@@ -288,6 +285,8 @@ class DashboardView:
                 self.faculty_tree.column(col, width=200)
             elif col == "Name":
                 self.faculty_tree.column(col, width=150)
+            elif col == "Verification":
+                self.faculty_tree.column(col, width=100)
             else:
                 self.faculty_tree.column(col, width=120)
 
@@ -306,8 +305,54 @@ class DashboardView:
 
     
         # Load departments for filter
-        # self.load_faculty_departments()
-        # self.refresh_faculty_list()
+        self.load_faculty_departments()
+        self.refresh_faculty_list()
+
+    def load_faculty_departments(self):
+        try:
+            departments = self.controller.get_all_departments()
+            self.dept_name_to_id = {d["name"]: d["department_id"] for d in departments}
+            self.faculty_dept_filter["values"] = list(self.dept_name_to_id.keys())
+        except Exception as e:
+            print(f"Failed to load departments: {e}")
+            messagebox.showerror("Error", f"Failed to load departments: {str(e)}")
+
+
+    def filter_faculty(self):
+        selected = self.faculty_dept_filter.get()
+        if not selected:
+            return
+
+        dept_id = self.dept_name_to_id.get(selected)
+        if dept_id is None:
+            return
+
+        try:
+            filtered_faculty = self.controller.get_faculties_by_department(dept_id)
+
+            # Clear existing rows
+            for row in self.faculty_tree.get_children():
+                self.faculty_tree.delete(row)
+
+            for faculty in filtered_faculty:
+                faculty_id = faculty.get("faculty_id") or faculty.get("id")
+                name = faculty.get("name")
+                email = faculty.get("email")
+                department = faculty.get("department")
+                created_at = faculty.get("created_at")
+                is_verified = faculty.get("verified", False)
+
+                total_students = self.controller.get_total_students_for_faculty(faculty_id)
+                verification_status = "Verified" if is_verified else "Pending"
+                self.faculty_tree.insert("", "end", values=(
+                    faculty_id, name, email, department, created_at, total_students, verification_status
+                ))
+        except Exception as e:
+            print("Failed to filter faculty list:", e)
+
+    def clear_faculty_filter(self):
+        self.faculty_dept_filter.set("")
+        self.refresh_faculty_list()
 
     def refresh_faculty_list(self):
         # Clear previous Treeview rows
@@ -323,19 +368,321 @@ class DashboardView:
                 email = faculty.get("email")
                 department = faculty.get("department")
                 created_at = faculty.get("created_at")
+                is_verified = faculty.get("verified", False)
 
                 # Optional: get total students under this faculty if required
                 total_students = self.controller.get_total_students_for_faculty(faculty_id)
-
+                verification_status = "Verified" if is_verified else "Pending"
                 self.faculty_tree.insert("", "end", values=(
-                    faculty_id, name, email, department, created_at, total_students
+                    faculty_id, name, email, department, created_at, total_students, verification_status
                 ))
 
         except Exception as e:
             print("Failed to refresh faculty list:", e)
 
+    def verify_selected_faculty(self):
+        selected_items = self.faculty_tree.selection()
+        if not selected_items:
+            messagebox.showwarning("No Selection", "Please select a faculty member to verify.")
+            return
+        try:
+            selected_item = selected_items[0]
+            values = self.faculty_tree.item(selected_item, "values")
+            faculty_id = values[0]
+            faculty_name = values[1]
+            current_status = values[6]  # Verification column
 
+            print(f"Debug: Verifying faculty ID: {faculty_id}, Current status: {current_status}")
+
+            # Check if already verified
+            if current_status.lower() == "verified" or current_status == False:
+                messagebox.showinfo("Already Verified", f"Faculty {faculty_name} is already verified.")
+                return
+
+            # Confirm verification
+            confirm = messagebox.askyesno(
+                "Confirm Verification", 
+                f"Are you sure you want to verify faculty {faculty_name} (ID: {faculty_id})?"
+            )
+            if not confirm:
+                return
+
+            # Call controller method to verify faculty
+            result = self.controller.verify_faculty(faculty_id)
+            if result:
+                self.refresh_faculty_list()
+                messagebox.showinfo("Success", f"Faculty {faculty_name} has been verified successfully.")
+            else:
+                messagebox.showerror("Error", "Failed to verify faculty. Please try again.")
+        except Exception as e:
+            print("Failed to verify faculty:", e)
+            messagebox.showerror("Error", "Could not verify faculty.")
+
+    def remove_selected_faculty(self):
+        selected_item = self.faculty_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a faculty to remove.")
+            return
+
+        faculty_values = self.faculty_tree.item(selected_item[0], "values")
+        faculty_id = faculty_values[0]
+        faculty_name = faculty_values[1]
+
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete {faculty_name}?")
+        if not confirm:
+            return
+
+        try:
+            self.controller.delete_faculty_by_id(faculty_id)
+            self.refresh_faculty_list()
+            messagebox.showinfo("Success", f"Faculty {faculty_name} is removed.")
+        except Exception as e:
+            print("Failed to delete faculty:", e)
+            messagebox.showerror("Error", "Could not remove faculty. Please try again.")
+
+    # TAB-02: Related To 'View Secretary' Tab
+    def setup_view_secretary_tab(self, parent):
+        top_frame = ttk.Frame(parent)
+        top_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        ttk.Label(top_frame, text="Secretary Management", font=("Arial", 14, "bold")).pack(side=tk.LEFT)
+        ttk.Button(top_frame, text="Refresh", command=self.refresh_secretary_list).pack(side=tk.RIGHT)
+        ttk.Button(top_frame, text="Remove", command=self.remove_selected_secretary).pack(side=tk.RIGHT, padx=(0, 10))
+
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(filter_frame, text="Filter by Department:").pack(side=tk.LEFT)
+        self.secretary_dept_filter = ttk.Combobox(filter_frame, width=20)
+        self.secretary_dept_filter.pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Apply Filter", command=self.filter_secretary).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Clear Filter", command=self.clear_secretary_filter).pack(side=tk.LEFT, padx=(5, 0))
+
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        columns = ("ID", "Name", "Email", "Department", "Joining Date")
+        self.secretary_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
+
+        for col in columns:
+            self.secretary_tree.heading(col, text=col)
+            if col == "Email":
+                self.secretary_tree.column(col, width=200)
+            elif col == "Name":
+                self.secretary_tree.column(col, width=150)
+            else:
+                self.secretary_tree.column(col, width=120)
+
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.secretary_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.secretary_tree.xview)
+        self.secretary_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+        self.secretary_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        self.load_secretary_departments()
+        self.refresh_secretary_list()
+
+    def load_secretary_departments(self):
+        try:
+            departments = self.controller.get_all_departments()
+            self.sec_dept_name_to_id = {d["name"]: d["department_id"] for d in departments}
+            self.secretary_dept_filter["values"] = list(self.sec_dept_name_to_id.keys())
+        except Exception as e:
+            print("Failed to load departments:", e)
+
+    def refresh_secretary_list(self):
+        for row in self.secretary_tree.get_children():
+            self.secretary_tree.delete(row)
+        try:
+            secretaries = self.controller.get_secretary_users()
+            for sec in secretaries:
+                self.secretary_tree.insert("", "end", values=(
+                sec["secretary_id"], 
+                sec["name"], 
+                sec["email"], 
+                sec["department"], 
+                sec["created_at"]
+            ))
+        except Exception as e:
+            print("Failed to refresh secretary list:", e)
+
+    def filter_secretary(self):
+        selected = self.secretary_dept_filter.get()
+        if not selected:
+            return
+
+        dept_id = self.sec_dept_name_to_id.get(selected)
+        if dept_id is None:
+            return
+
+        try:
+            secretaries = self.controller.get_secretaries_by_department(dept_id)
+            for row in self.secretary_tree.get_children():
+                self.secretary_tree.delete(row)
+
+            for sec in secretaries:
+                self.secretary_tree.insert("", "end", values=(
+                sec["secretary_id"], 
+                sec["name"], 
+                sec["email"], 
+                sec["department"], 
+                sec["created_at"]
+            ))
+        except Exception as e:
+            print("Failed to filter secretaries:", e)
+
+    def clear_secretary_filter(self):
+        self.secretary_dept_filter.set("")
+        self.refresh_secretary_list()
+
+    def remove_selected_secretary(self):
+        selected_item = self.secretary_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a secretary to remove.")
+            return
+        secretary_values = self.secretary_tree.item(selected_item[0], "values")[0]
+        secretary_id = secretary_values[0]
+        secretary_name = secretary_values[1]
+
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete {secretary_name}?")
+        if not confirm:
+            return
+
+        try:
+            self.controller.delete_secretary_by_id(secretary_id)
+            self.refresh_secretary_list()
+            messagebox.showinfo("Success", f"Secretary {secretary_name} is removed.")
+        except Exception as e:
+            print("Failed to delete secretary:", e)
+            messagebox.showerror("Error", "Could not delete secretary. Please try again.")
     
+    # TAB-03: Related To 'View Company' Tab
+    def setup_view_company_tab(self, parent):
+        style = ttk.Style()
+        style.configure("Success.TButton", background="green", foreground="black")
+        style.configure("Info.TButton", background="blue", foreground="black")
+        style.configure("Danger.TButton", background="red", foreground="black")
+        top_frame = ttk.Frame(parent)
+        top_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        ttk.Label(top_frame, text="Company Management", font=("Arial", 14, "bold")).pack(side=tk.LEFT)
+        ttk.Button(top_frame, text="Refresh", command=self.refresh_company_list, style="Success.TButton").pack(side=tk.RIGHT)
+        ttk.Button(top_frame, text="Verify", command=self.verify_selected_company, style="Info.TButton").pack(side=tk.RIGHT, padx=(5, 5))
+        ttk.Button(top_frame, text="Remove", command=self.remove_selected_company, style="Danger.TButton").pack(side=tk.RIGHT, padx=(0, 10))
+
+        filter_frame = ttk.Frame(parent)
+        filter_frame.pack(fill=tk.X, padx=10, pady=5)
+
+        ttk.Label(filter_frame, text="Filter by Registration:").pack(side=tk.LEFT)
+        self.company_filter = ttk.Combobox(filter_frame, width=20, values=["Registered", "Unregistered"])
+        self.company_filter.pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Apply Filter", command=self.filter_company).pack(side=tk.LEFT, padx=(10, 0))
+        ttk.Button(filter_frame, text="Clear Filter", command=self.clear_company_filter).pack(side=tk.LEFT, padx=(5, 0))
+
+        tree_frame = ttk.Frame(parent)
+        tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        columns = ("ID", "Name", "Contact Person", "Phone", "Email", "Address", "Registered")
+        self.company_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
+
+        for col in columns:
+            self.company_tree.heading(col, text=col)
+            self.company_tree.column(col, width=150)
+
+        v_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.company_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL, command=self.company_tree.xview)
+        self.company_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+
+        self.company_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
+
+        self.refresh_company_list()
+
+    def refresh_company_list(self):
+        for row in self.company_tree.get_children():
+            self.company_tree.delete(row)
+
+        try:
+            companies = self.controller.get_all_companies()
+            for comp in companies:
+                self.company_tree.insert("", "end", values=(
+                    comp["company_id"], comp["name"], comp["contact_person"], comp["phone"],
+                    comp["email"], comp["address"], "Yes" if comp["registered"] else "No"
+                ))
+        except Exception as e:
+            print("Failed to refresh company list:", e)
+
+    def filter_company(self):
+        selected = self.company_filter.get()
+        if selected not in ["Registered", "Unregistered"]:
+            return
+
+        is_registered = selected == "Registered"
+
+        for row in self.company_tree.get_children():
+            self.company_tree.delete(row)
+
+        try:
+            companies = self.controller.get_companies_by_registration(is_registered)
+            for comp in companies:
+                self.company_tree.insert("", "end", values=(
+                    comp["company_id"], comp["name"], comp["contact_person"], comp["phone"],
+                    comp["email"], comp["address"], "Yes" if comp["registered"] else "No"
+                ))
+        except Exception as e:
+            print("Failed to filter companies:", e)
+
+    def clear_company_filter(self):
+        self.company_filter.set("")
+        self.refresh_company_list()
+
+    def remove_selected_company(self):
+        selected_item = self.company_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a company to remove.")
+            return
+
+        company_values = self.company_tree.item(selected_item[0], "values")
+        company_id = company_values[0]
+        company_name = company_values[1]
+        confirm = messagebox.askyesno("Confirm Deletion", f"Are you sure you want to delete {company_name}?")
+        if not confirm:
+            return
+
+        try:
+            self.controller.delete_company_by_id(company_id)
+            self.refresh_company_list()
+            messagebox.showinfo("Success", f"{company_name} is removed.")
+        except Exception as e:
+            print("Failed to remove company:", e)
+            messagebox.showerror("Error", "Could not remove company. Please try again.")
+
+    def verify_selected_company(self):
+        selected_item = self.company_tree.selection()
+        if not selected_item:
+            messagebox.showwarning("No Selection", "Please select a company to verify.")
+            return
+
+        company_id = self.company_tree.item(selected_item[0], "values")[0]
+
+        try:
+            self.controller.verify_company(company_id)
+            self.refresh_company_list()
+            messagebox.showinfo("Success", f"Company ID {company_id} has been verified.")
+        except Exception as e:
+            print("Failed to verify company:", e)
+            messagebox.showerror("Error", "Could not verify company.")
+
+
     # RELATED TO STUDENT TAB
     # TAB-01: related to "My Applications" tab
     def setup_applications_tab(self, parent):
@@ -498,10 +845,7 @@ class DashboardView:
         """Upload internship report"""
         # Implementation for report upload
         messagebox.showinfo("Info", "Report upload functionality would be implemented here")
-    
-    
-    
-    
+       
     # RELATED TO SECRETARY TAB
     #TAB-1: related to "Pending Applications" tab
     def setup_pending_applications_tab(self, parent):
@@ -630,21 +974,18 @@ class DashboardView:
         self.load_faculty_and_students()
 
     def load_faculty_and_students(self):
-        """Load faculty and student lists for assignment"""
-        faculty_list = self.controller.get_faculty_users()
-        student_list = student_list = self.controller.get_approved_unassigned_students()
-        
-        # Populate faculty combo
-        faculty_values = [f"{f['user_id']}: {f['name']}" for f in faculty_list]
+        """Load faculty and students from secretary's department"""
+        secretary_id = self.user['user_id']  # This is secretary_id based on login context
+
+        faculty_list = self.controller.get_faculty_by_secretary(secretary_id)
+        student_list = self.controller.get_approved_unassigned_students_by_secretary(secretary_id)
+
+        faculty_values = [f"{f['faculty_id']}: {f['name']}" for f in faculty_list]
         self.faculty_combo['values'] = faculty_values
-        
-        # Populate student combo
-        student_values = [f"{s['user_id']}: {s['name']}" for s in student_list]
+
+        student_values = [f"{s['student_id']}: {s['name']}" for s in student_list]
         self.student_combo['values'] = student_values
     
-    
-    
-
     # RELATED TO COMPANY TAB
     def setup_company_quota_tab(self, parent):
         """Setup quota management tab for company"""
